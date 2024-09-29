@@ -1,20 +1,43 @@
+# coincheck_auth.py
 import hashlib
 import hmac
-import json
-from collections import OrderedDict
-from typing import Any, Dict
-from urllib.parse import urlencode
+import time
+import urllib
+import urllib.parse
 
-from hummingbot.connector.time_synchronizer import TimeSynchronizer
+from hummingbot.connector.exchange.coincheck.coincheck_constants import PRIVATE_API_VERSION, REST_URL
 from hummingbot.core.web_assistant.auth import AuthBase
-from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest, WSRequest
+from hummingbot.core.web_assistant.connections.data_types import RESTRequest, WSRequest
 
 
 class CoincheckAuth(AuthBase):
-    def __init__(self, api_key: str, secret_key: str, time_provider: TimeSynchronizer):
-        self.api_key = api_key
+    def __init__(self, access_key: str, secret_key: str):
+        self.access_key = access_key
         self.secret_key = secret_key
-        self.time_provider = time_provider
+        self._nonce=int(time.time())
+    
+    def _get_nonce(self) -> str:
+        self._nonce += 1
+        return str(self._nonce)
+    
+    def _get_signature(self, message:str):
+            signature = hmac.new(
+                bytes(self.secret_key.encode()),
+                bytes(message.encode()),
+                hashlib.sha256
+            ).hexdigest()
+            return signature
+    
+    def get_headers(self,request_path:str):
+        uri=REST_URL+PRIVATE_API_VERSION+request_path
+        message=str(self._nonce)+urllib.parse.urlparse(uri).geturl()
+        headers = {
+            'ACCESS-KEY': self.access_key,
+            'ACCESS-NONCE': str(self._nonce),
+            'ACCESS-SIGNATURE': self._get_signature(message),
+            'Content-Type': 'application/json' 
+        }
+        return headers
 
     async def rest_authenticate(self, request: RESTRequest) -> RESTRequest:
         """
@@ -22,15 +45,10 @@ class CoincheckAuth(AuthBase):
         the required parameter in the request header.
         :param request: the request to be configured for authenticated interaction
         """
-        if request.method == RESTMethod.POST:
-            request.data = self.add_auth_to_params(params=json.loads(request.data))
-        else:
-            request.params = self.add_auth_to_params(params=request.params)
-
         headers = {}
         if request.headers is not None:
             headers.update(request.headers)
-        headers.update(self.header_for_authentication())
+        headers.update(self.get_headers())
         request.headers = headers
 
         return request
@@ -41,24 +59,3 @@ class CoincheckAuth(AuthBase):
         functionality
         """
         return request  # pass-through
-
-    def add_auth_to_params(self,
-                           params: Dict[str, Any]):
-        timestamp = int(self.time_provider.time() * 1e3)
-
-        request_params = OrderedDict(params or {})
-        request_params["timestamp"] = timestamp
-
-        signature = self._generate_signature(params=request_params)
-        request_params["signature"] = signature
-
-        return request_params
-
-    def header_for_authentication(self) -> Dict[str, str]:
-        return {"X-MBX-APIKEY": self.api_key}
-
-    def _generate_signature(self, params: Dict[str, Any]) -> str:
-
-        encoded_params_str = urlencode(params)
-        digest = hmac.new(self.secret_key.encode("utf8"), encoded_params_str.encode("utf8"), hashlib.sha256).hexdigest()
-        return digest

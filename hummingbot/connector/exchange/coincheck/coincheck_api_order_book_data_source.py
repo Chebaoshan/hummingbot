@@ -14,7 +14,6 @@ from hummingbot.logger import HummingbotLogger
 if TYPE_CHECKING:
     from hummingbot.connector.exchange.coincheck.coincheck_exchange import CoincheckExchange
 
-
 class coincheckAPIOrderBookDataSource(OrderBookTrackerDataSource):
     HEARTBEAT_TIME_INTERVAL = 30.0
     TRADE_STREAM_ID = 1

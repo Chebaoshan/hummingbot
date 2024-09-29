@@ -1,17 +1,17 @@
 from hummingbot.core.api_throttler.data_types import LinkedLimitWeightPair, RateLimit
 from hummingbot.core.data_type.in_flight_order import OrderState
 
-DEFAULT_DOMAIN = "com"
-
 HBOT_ORDER_ID_PREFIX = "x-XEKWYICX"
 MAX_ORDER_ID_LEN = 32
+DEFAULT_DOMAIN="com"
 
 # Base URL
-REST_URL = "https://coincheck.{}/api"
-WSS_URL = "wss://ws-api.coincheck.{}"
+REST_URL = "https://coincheck.com/api"
+WSS_URL = "wss://ws-api.coincheck.com"
 
 PUBLIC_API_VERSION = ""
 PRIVATE_API_VERSION = ""
+BLANK_STRING=""
 
 # Public API endpoints or CoincheckClient function
 TICKER_PRICE_CHANGE_PATH_URL = "/ticker"
@@ -22,7 +22,8 @@ SNAPSHOT_PATH_URL = "/depth"
 SERVER_TIME_PATH_URL = "/exchange_status"
 
 # Private API endpoints or CoincheckClient function
-ACCOUNTS_PATH_URL = "/accounts"
+ACCOUNTS_BALANCE_PATH_URL = "/accounts/balance"
+ACCOUNTS_PATH_URL="/accounts"
 MY_TRADES_PATH_URL = "/myTrades"
 ORDER_PATH_URL = "/order"
 COINCHECK_USER_STREAM_PATH_URL = "/userDataStream"

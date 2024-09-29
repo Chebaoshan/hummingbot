@@ -1,12 +1,11 @@
 import asyncio
-import hashlib
-import hmac
+import json
 import logging
-import time
-import urllib.parse
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+import aiohttp
+import requests
 from bidict import bidict
 
 from hummingbot.connector.constants import s_decimal_NaN
@@ -39,7 +38,6 @@ if TYPE_CHECKING:
 
 class CoincheckExchange(ExchangePyBase):
     UPDATE_ORDER_STATUS_MIN_INTERVAL = 10.0
-
     web_utils = web_utils
 
     def __init__(self,
@@ -48,11 +46,9 @@ class CoincheckExchange(ExchangePyBase):
                  coincheck_api_secret: str,
                  trading_pairs: Optional[List[str]] = None,
                  trading_required: bool = True,
-                 domain: str = CONSTANTS.DEFAULT_DOMAIN,
                  ):
         self.api_key = coincheck_api_key
         self.secret_key = coincheck_api_secret
-        self._domain = domain
         self._trading_required = trading_required
         self._trading_pairs = trading_pairs
         self._last_trades_poll_coincheck_timestamp = 1.0
@@ -69,24 +65,20 @@ class CoincheckExchange(ExchangePyBase):
     @property
     def authenticator(self):
         return CoincheckAuth(
-            api_key=self.api_key,
-            secret_key=self.secret_key,
-            time_provider=self._time_synchronizer)
+            access_key=self.api_key,
+            secret_key=self.secret_key)
 
     @property
     def name(self) -> str:
-        if self._domain == "com":
             return "coincheck"
-        else:
-            return f"coincheck_{self._domain}"
 
+    @property
+    def domain(self) -> str:
+        return "com"
+    
     @property
     def rate_limits_rules(self):
         return CONSTANTS.RATE_LIMITS
-
-    @property
-    def domain(self):
-        return self._domain
 
     @property
     def client_order_id_max_length(self):
@@ -147,7 +139,7 @@ class CoincheckExchange(ExchangePyBase):
         return web_utils.build_api_factory(
             throttler=self._throttler,
             time_synchronizer=self._time_synchronizer,
-            domain=self._domain,
+            domain=self.domain,
             auth=self._auth)
 
     def _create_order_book_data_source(self) -> OrderBookTrackerDataSource:
@@ -227,7 +219,7 @@ class CoincheckExchange(ExchangePyBase):
                 params=order_id,
                 is_auth_required=True)
         except Exception as error:
-            logging.getLogger().error(f"Error canceling order: {error}")
+            self.logger().info(error)
             return False
         if cancel_result.get("success") is True:
             return True
@@ -508,39 +500,24 @@ class CoincheckExchange(ExchangePyBase):
         return order_update
 
     async def _update_balances(self):
-        local_asset_names = set(self._account_balances.keys())
-        remote_asset_names = set()
-        nonce = str(int(time.time()))
-        uri = CONSTANTS.REST_URL.format(CONSTANTS.DEFAULT_DOMAIN) + CONSTANTS.PRIVATE_API_VERSION + CONSTANTS.ACCOUNTS_PATH_URL + "/balance"
-        message = nonce + urllib.parse.urlparse(uri).geturl()
-        signature = hmac.new(self.secret_key.encode(), message.encode(), hashlib.sha256).hexdigest()
-        headers = {
-            "ACCESS-KEY": self.api_key,
-            "ACCESS-NONCE": nonce,
-            "ACCESS-SIGNATURE": signature
-        }
-        logging.getLogger().info(f"---{self.api_key}---{nonce}---{signature}")
+        path_url=CONSTANTS.REST_URL+CONSTANTS.ACCOUNTS_BALANCE_PATH_URL
+        header=self.authenticator.get_headers(CONSTANTS.ACCOUNTS_BALANCE_PATH_URL)
         try:
-            balances = await self._api_get(
-                path_url=CONSTANTS.ACCOUNTS_PATH_URL + "/balance",
-                headers=headers,
-                is_auth_required=True)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(path_url,params=None,headers=header) as response:
+                    balance_info=await response.json()
         except Exception as error:
-            logging.getLogger().error(f"Error fetching balances: {error}")
+            self.logger().error(f"Error fetching balances:{error}")
             return
-        for balance_entry in balances:
-            asset_name = "jpy"
-            free_balance = Decimal(balance_entry["jpy_reserved"])
-            total_balance = Decimal(balance_entry["jpy_reserved"]) + Decimal(balance_entry["jpy_lend_in_use"])
-            self._account_available_balances[asset_name] = free_balance
-            self._account_balances[asset_name] = total_balance
-            remote_asset_names.add(asset_name)
-
-        asset_names_to_remove = local_asset_names.difference(remote_asset_names)
-        for asset_name in asset_names_to_remove:
-            del self._account_available_balances[asset_name]
-            del self._account_balances[asset_name]
-
+        print(balance_info)
+        if balance_info["success"] == True:
+            self.logger().info(f"Current_JPY:"+balance_info["jpy"])
+            self.logger().info(f"Current_JPY_Resevred:"+balance_info["jpy_reserved"])
+            self.logger().info(f"Current_JPY_Lend_In_Use:"+balance_info["jpy_lend_in_use"])
+        elif balance_info["success"] == False:
+            self.logger().error(f"Error Request:"+balance_info)
+            return
+        
     def _initialize_trading_pair_symbols_from_exchange_info(self, exchange_info: Dict[str, Any]):
         mapping = bidict()
         for symbol_data in filter(coincheck_utils.is_exchange_information_valid, exchange_info["exchange_status"]):

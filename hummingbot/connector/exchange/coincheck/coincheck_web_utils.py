@@ -10,24 +10,10 @@ from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFa
 
 
 def public_rest_url(path_url: str, domain: str = CONSTANTS.DEFAULT_DOMAIN) -> str:
-    """
-    Creates a full URL for provided public REST endpoint
-    :param path_url: a public REST endpoint
-    :param domain: the Coincheck domain to connect to ("com" or "us"). The default value is "com"
-    :return: the full URL to the endpoint
-    """
-    return CONSTANTS.REST_URL.format(domain) + CONSTANTS.PUBLIC_API_VERSION + path_url
-
+    return CONSTANTS.REST_URL + CONSTANTS.PUBLIC_API_VERSION + path_url
 
 def private_rest_url(path_url: str, domain: str = CONSTANTS.DEFAULT_DOMAIN) -> str:
-    """
-    Creates a full URL for provided private REST endpoint
-    :param path_url: a private REST endpoint
-    :param domain: the Coincheck domain to connect to ("com" or "us"). The default value is "com"
-    :return: the full URL to the endpoint
-    """
-    return CONSTANTS.REST_URL.format(domain) + CONSTANTS.PRIVATE_API_VERSION + path_url
-
+    return CONSTANTS.REST_URL + CONSTANTS.PRIVATE_API_VERSION + path_url
 
 def build_api_factory(
         throttler: Optional[AsyncThrottler] = None,
@@ -49,15 +35,12 @@ def build_api_factory(
         ])
     return api_factory
 
-
 def build_api_factory_without_time_synchronizer_pre_processor(throttler: AsyncThrottler) -> WebAssistantsFactory:
     api_factory = WebAssistantsFactory(throttler=throttler)
     return api_factory
 
-
 def create_throttler() -> AsyncThrottler:
     return AsyncThrottler(CONSTANTS.RATE_LIMITS)
-
 
 async def get_current_server_time(
         throttler: Optional[AsyncThrottler] = None,

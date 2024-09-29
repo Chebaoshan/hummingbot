@@ -63,10 +63,6 @@ class coincheckAPIOrderBookDataSource(OrderBookTrackerDataSource):
         return data
 
     async def _subscribe_channels(self, ws: WSAssistant):
-        """
-        Subscribes to the trade events and diff orders events through the provided websocket connection.
-        :param ws: the websocket assistant used to connect to the exchange
-        """
         try:
             trade_params = []
             depth_params = []
@@ -103,7 +99,7 @@ class coincheckAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL,
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 

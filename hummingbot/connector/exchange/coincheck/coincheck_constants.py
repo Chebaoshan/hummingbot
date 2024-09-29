@@ -15,7 +15,6 @@ BLANK_STRING=""
 
 # Public API endpoints or CoincheckClient function
 TICKER_PRICE_CHANGE_PATH_URL = "/ticker"
-TICKER_BOOK_PATH_URL = "/ticker/bookTicker"
 EXCHANGE_INFO_PATH_URL = "/exchange_status"
 PING_PATH_URL = "/ping"
 SNAPSHOT_PATH_URL = "/depth"
@@ -24,16 +23,17 @@ SERVER_TIME_PATH_URL = "/exchange_status"
 # Private API endpoints or CoincheckClient function
 ACCOUNTS_BALANCE_PATH_URL = "/accounts/balance"
 ACCOUNTS_PATH_URL="/accounts"
-MY_TRADES_PATH_URL = "/myTrades"
-ORDER_PATH_URL = "/order"
+MY_TRADES_PATH_URL = "/exchange/orders/transactions"
+ORDER_PATH_URL = "/exchange/orders"
+ORDER_STATUS="/exchange/orders/opens"
 COINCHECK_USER_STREAM_PATH_URL = "/userDataStream"
 
 WS_HEARTBEAT_TIME_INTERVAL = 30
 
 # Coincheck params
 
-SIDE_BUY = "BUY"
-SIDE_SELL = "SELL"
+SIDE_BUY = "buy"
+SIDE_SELL = "sell"
 
 TIME_IN_FORCE_GTC = "GTC"  # Good till cancelled
 TIME_IN_FORCE_IOC = "IOC"  # Immediate or cancel
@@ -78,9 +78,6 @@ RATE_LIMITS = [
     # Weighted Limits
     RateLimit(limit_id=TICKER_PRICE_CHANGE_PATH_URL, limit=MAX_REQUEST, time_interval=ONE_MINUTE,
               linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, 2),
-                             LinkedLimitWeightPair(RAW_REQUESTS, 1)]),
-    RateLimit(limit_id=TICKER_BOOK_PATH_URL, limit=MAX_REQUEST, time_interval=ONE_MINUTE,
-              linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, 4),
                              LinkedLimitWeightPair(RAW_REQUESTS, 1)]),
     RateLimit(limit_id=EXCHANGE_INFO_PATH_URL, limit=MAX_REQUEST, time_interval=ONE_MINUTE,
               linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, 20),

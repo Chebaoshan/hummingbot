@@ -45,7 +45,7 @@ class CoincheckAPIUserStreamDataSource(UserStreamTrackerDataSource):
         await self._listen_key_initialized_event.wait()
 
         ws: WSAssistant = await self._get_ws_assistant()
-        url = f"{CONSTANTS.WSS_URL.format(self._domain)}/{self._current_listen_key}"
+        url = f"{CONSTANTS.WSS_URL}/{self._current_listen_key}"
         await ws.connect(ws_url=url, ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 
@@ -66,7 +66,7 @@ class CoincheckAPIUserStreamDataSource(UserStreamTrackerDataSource):
                 url=web_utils.public_rest_url(path_url=CONSTANTS.COINCHECK_USER_STREAM_PATH_URL, domain=self._domain),
                 method=RESTMethod.POST,
                 throttler_limit_id=CONSTANTS.COINCHECK_USER_STREAM_PATH_URL,
-                headers=self._auth.header_for_authentication()
+                headers=self._auth.get_headers()
             )
         except asyncio.CancelledError:
             raise
@@ -84,7 +84,7 @@ class CoincheckAPIUserStreamDataSource(UserStreamTrackerDataSource):
                 method=RESTMethod.PUT,
                 return_err=True,
                 throttler_limit_id=CONSTANTS.COINCHECK_USER_STREAM_PATH_URL,
-                headers=self._auth.header_for_authentication()
+                headers=self._auth.get_headers()
             )
 
             if "code" in data:

@@ -1,11 +1,10 @@
 import asyncio
 import json
-import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 import aiohttp
-import requests
 from bidict import bidict
 
 from hummingbot.connector.constants import s_decimal_NaN
@@ -111,13 +110,29 @@ class CoincheckExchange(ExchangePyBase):
     @property
     def is_trading_required(self) -> bool:
         return self._trading_required
+	
+    async def http_request_coincheck(self,path:str,params=None,http_method="GET"):
+        path_url=CONSTANTS.REST_URL+path
+        header=self.authenticator.get_headers(path)
+        try:
+            async with aiohttp.ClientSession() as session:
+                if http_method=="GET":
+                    async with session.get(path_url, params=params, headers=header) as response:
+                        resp_json = await response.json()
+                elif http_method=="POST":        
+                    async with session.post(path_url, params=params, headers=header) as response:
+                        resp_json = await response.json()
+                elif http_method=="DELETE":
+                    async with session.delete(path_url, params=params, headers=header) as response:
+                        resp_json = await response.json()
+        except Exception as error:
+            self.logger().error(f"Error Request:{error}")
+            return
+        return resp_json
 
     def supported_order_types(self):
         return [OrderType.LIMIT, OrderType.LIMIT_MAKER, OrderType.MARKET]
-
-    async def get_all_pairs_prices(self) -> List[Dict[str, str]]:
-        pairs_prices = await self._api_get(path_url=CONSTANTS.TICKER_BOOK_PATH_URL)
-        return pairs_prices
+        return [OrderType.LIMIT, OrderType.LIMIT_MAKER, OrderType.MARKET]
 
     def _is_request_exception_related_to_time_synchronizer(self, request_exception: Exception):
         error_description = str(request_exception)
@@ -181,26 +196,21 @@ class CoincheckExchange(ExchangePyBase):
         amount_str = f"{amount:f}"
         order_type_str = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
         pair = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-        api_params = {"pair": pair,
-                      "order_type": order_type_str,
-                      "rate": "0.00005",
+        api_params = {"rate": "0.00005",
                       "amount": amount_str,
-                      "market_buy_amount": "",
-                      "stop_loss_rate": "",
+                      "market_buy_amount":None,
+                      "order_type": order_type_str,
+                      "time_in_force": None,
+                      "stop_loss_rate": None,
+                      "pair": pair,
                       }
-        if order_type is OrderType.LIMIT or order_type is OrderType.LIMIT_MAKER:
-            price_str = f"{price:f}"
-            api_params["price"] = price_str
         if order_type == OrderType.LIMIT:
-            api_params["timeInForce"] = CONSTANTS.TIME_IN_FORCE_GTC
+            api_params["time_in_force"] = CONSTANTS.TIME_IN_FORCE_GTC
 
         try:
-            order_result = await self._api_post(
-                path_url=CONSTANTS.ORDER_PATH_URL,
-                data=api_params,
-                is_auth_required=True)
-            o_id = str(order_result["orderId"])
-            transact_time = order_result["transactTime"] * 1e-3
+            order_result=await self.http_request_coincheck(path_url=CONSTANTS.ORDER_PATH_URL,params=api_params,http_method="POST")
+            o_id = str(order_result["id"])
+            transact_time = order_result["created_at"]
         except IOError as e:
             error_description = str(e)
             is_server_overloaded = ("status is 503" in error_description
@@ -214,10 +224,7 @@ class CoincheckExchange(ExchangePyBase):
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         try:
-            cancel_result = await self._api_delete(
-                path_url=CONSTANTS.ORDER_PATH_URL,
-                params=order_id,
-                is_auth_required=True)
+            cancel_result=await self.http_request_coincheck(path_url=CONSTANTS.ORDER_PATH_URL,params=order_id,http_method="DELETE")
         except Exception as error:
             self.logger().info(error)
             return False
@@ -226,21 +233,6 @@ class CoincheckExchange(ExchangePyBase):
         return False
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
-        """
-        Example:
-        {
-               {
-      "pair": "btc_jpy",
-      "status": "available",
-      "timestamp": 1726325966,
-      "availability": {
-        "order": true,
-        "market_order": true,
-        "cancel": true
-      }
-    },
-        }
-        """
         trading_pair_rules = exchange_info_dict.get("exchange_status", [])
         retval = []
         for rule in filter(coincheck_utils.is_exchange_information_valid, trading_pair_rules):
@@ -272,22 +264,12 @@ class CoincheckExchange(ExchangePyBase):
         await super()._status_polling_loop_fetch_updates()
 
     async def _update_trading_fees(self):
-        """
-        Update fees information from the exchange
-        """
         pass
 
     async def _user_stream_event_listener(self):
-        """
-        This functions runs in background continuously processing the events received from the exchange by the user
-        stream data source. It keeps reading events from the queue until the task is interrupted.
-        The events received are balance updates, order updates and trade events.
-        """
         async for event_message in self._iter_user_event_queue():
             try:
                 event_type = event_message.get("e")
-                # Refer to https://github.com/coincheck-exchange/coincheck-official-api-docs/blob/master/user-data-stream.md
-                # As per the order update section in coincheck the ID of the order being canceled is under the "C" key
                 if event_type == "executionReport":
                     execution_type = event_message.get("x")
                     if execution_type != "CANCELED":
@@ -344,14 +326,6 @@ class CoincheckExchange(ExchangePyBase):
                 await self._sleep(5.0)
 
     async def _update_order_fills_from_trades(self):
-        """
-        This is intended to be a backup measure to get filled events with trade ID for orders,
-        in case coincheck's user stream events are not working.
-        NOTE: It is not required to copy this functionality in other connectors.
-        This is separated from _update_order_status which only updates the order status without producing filled
-        events, since coincheck's get order endpoint does not return trade IDs.
-        The minimum poll interval for order status is 10 seconds.
-        """
         small_interval_last_tick = self._last_poll_timestamp / self.UPDATE_ORDER_STATUS_MIN_INTERVAL
         small_interval_current_tick = self.current_timestamp / self.UPDATE_ORDER_STATUS_MIN_INTERVAL
         long_interval_last_tick = self._last_poll_timestamp / self.LONG_POLL_INTERVAL
@@ -369,14 +343,13 @@ class CoincheckExchange(ExchangePyBase):
             trading_pairs = self.trading_pairs
             for trading_pair in trading_pairs:
                 params = {
-                    "symbol": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
+                    "pair": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)+"_jpy"
                 }
                 if self._last_poll_timestamp > 0:
-                    params["startTime"] = query_time
-                tasks.append(self._api_get(
+                    params["created_at"] = query_time
+                tasks.append(self.http_request_coincheck(
                     path_url=CONSTANTS.MY_TRADES_PATH_URL,
-                    params=params,
-                    is_auth_required=True))
+                    params=params))
 
             self.logger().debug(f"Polling for order fills of {len(tasks)} trading pairs.")
             results = await safe_gather(*tasks, return_exceptions=True)
@@ -446,17 +419,9 @@ class CoincheckExchange(ExchangePyBase):
         if order.exchange_order_id is not None:
             exchange_order_id = int(order.exchange_order_id)
             trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
-            all_fills_response = await self._api_get(
-                path_url=CONSTANTS.MY_TRADES_PATH_URL,
-                params={
-                    "symbol": trading_pair,
-                    "orderId": exchange_order_id
-                },
-                is_auth_required=True,
-                limit_id=CONSTANTS.MY_TRADES_PATH_URL)
-
-            for trade in all_fills_response:
-                exchange_order_id = str(trade["orderId"])
+            all_fills_response = await self.http_request_coincheck(path_url=CONSTANTS.MY_TRADES_PATH_URL)
+            for trade in all_fills_response["transactions"]:
+                exchange_order_id = str(trade["id"])
                 fee = TradeFeeBase.new_spot_fee(
                     fee_schema=self.trade_fee_schema(),
                     trade_type=order.trade_type,
@@ -469,51 +434,30 @@ class CoincheckExchange(ExchangePyBase):
                     exchange_order_id=exchange_order_id,
                     trading_pair=trading_pair,
                     fee=fee,
-                    fill_base_amount=Decimal(trade["qty"]),
-                    fill_quote_amount=Decimal(trade["quoteQty"]),
-                    fill_price=Decimal(trade["price"]),
-                    fill_timestamp=trade["time"] * 1e-3,
+                    fill_base_amount=Decimal(trade["funds"]["jpy"]),
+                    fill_quote_amount=Decimal(trade["funds"]["jpy"]),
+                    fill_price=Decimal(trade["funds"]["jpy"]),
+                    fill_timestamp=trade["created_at"] * 1e-3,
                 )
                 trade_updates.append(trade_update)
 
         return trade_updates
 
     async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
-        trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
-        updated_order_data = await self._api_get(
-            path_url=CONSTANTS.ORDER_PATH_URL,
-            params={
-                "symbol": trading_pair,
-                "origClientOrderId": tracked_order.client_order_id},
-            is_auth_required=True)
-
-        new_state = CONSTANTS.ORDER_STATE[updated_order_data["status"]]
-
+        updated_order_data = await self.http_request_coincheck(path_url=CONSTANTS.ORDER_STATUS)
         order_update = OrderUpdate(
-            client_order_id=tracked_order.client_order_id,
-            exchange_order_id=str(updated_order_data["orderId"]),
-            trading_pair=tracked_order.trading_pair,
-            update_timestamp=updated_order_data["updateTime"] * 1e-3,
-            new_state=new_state,
+            client_order_id=updated_order_data["orders"][0]["id"],
+            exchange_order_id=str(updated_order_data["orders"][0]["id"]),
+            trading_pair=updated_order_data["orders"][0]["pair"],
+            update_timestamp=updated_order_data["orders"][0]["created_at"] * 1e-3,
+            new_state=1,
         )
-
         return order_update
 
     async def _update_balances(self):
-        path_url=CONSTANTS.REST_URL+CONSTANTS.ACCOUNTS_BALANCE_PATH_URL
-        header=self.authenticator.get_headers(CONSTANTS.ACCOUNTS_BALANCE_PATH_URL)
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(path_url,params=None,headers=header) as response:
-                    balance_info=await response.json()
-        except Exception as error:
-            self.logger().error(f"Error fetching balances:{error}")
-            return
-        print(balance_info)
+        balance_info=await self.http_request_coincheck(CONSTANTS.ACCOUNTS_BALANCE_PATH_URL)
         if balance_info["success"] == True:
             self.logger().info(f"Current_JPY:"+balance_info["jpy"])
-            self.logger().info(f"Current_JPY_Resevred:"+balance_info["jpy_reserved"])
-            self.logger().info(f"Current_JPY_Lend_In_Use:"+balance_info["jpy_lend_in_use"])
         elif balance_info["success"] == False:
             self.logger().error(f"Error Request:"+balance_info)
             return
@@ -521,19 +465,14 @@ class CoincheckExchange(ExchangePyBase):
     def _initialize_trading_pair_symbols_from_exchange_info(self, exchange_info: Dict[str, Any]):
         mapping = bidict()
         for symbol_data in filter(coincheck_utils.is_exchange_information_valid, exchange_info["exchange_status"]):
-            mapping[symbol_data["symbol"]] = combine_to_hb_trading_pair(base=symbol_data["baseAsset"],
-                                                                        quote=symbol_data["quoteAsset"])
+            current_symbol=str(symbol_data["pair"]).split("_")[0]
+            mapping[current_symbol] = combine_to_hb_trading_pair(base=current_symbol,quote="jpy")
         self._set_trading_pair_symbol_map(mapping)
 
     async def _get_last_traded_price(self, trading_pair: str) -> float:
         params = {
             "pair": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
         }
+        resp_json=await self.http_request_coincheck(CONSTANTS.TICKER_PRICE_CHANGE_PATH_URL,params=params)
+        return float(resp_json["last"])
 
-        resp_json = await self._api_request(
-            method=RESTMethod.GET,
-            path_url=CONSTANTS.TICKER_PRICE_CHANGE_PATH_URL,
-            params=params
-        )
-
-        return float(resp_json["lastPrice"])

@@ -28,7 +28,7 @@ class CoincheckAuth(AuthBase):
             ).hexdigest()
             return signature
     
-    def get_headers(self,request_path:str):
+    def get_headers(self,request_path:str=""):
         uri=REST_URL+PRIVATE_API_VERSION+request_path
         message=str(self._nonce)+urllib.parse.urlparse(uri).geturl()
         headers = {

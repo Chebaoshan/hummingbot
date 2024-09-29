@@ -48,8 +48,9 @@ class coincheckAPIOrderBookDataSource(OrderBookTrackerDataSource):
         :return: the response from the exchange (JSON dictionary)
         """
         params = {
-            "symbol": await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair),
-            "limit": "1000"
+            "pair":"eth_jpy"
+            # "symbol": await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair),
+            # "limit": "1000"
         }
 
         rest_assistant = await self._api_factory.get_rest_assistant()
@@ -57,7 +58,6 @@ class coincheckAPIOrderBookDataSource(OrderBookTrackerDataSource):
             url=web_utils.public_rest_url(path_url=CONSTANTS.SNAPSHOT_PATH_URL, domain=self._domain),
             params=params,
             method=RESTMethod.GET,
-            throttler_limit_id=CONSTANTS.SNAPSHOT_PATH_URL,
         )
 
         return data

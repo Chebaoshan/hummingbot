@@ -17,7 +17,7 @@ BLANK_STRING=""
 TICKER_PRICE_CHANGE_PATH_URL = "/ticker"
 EXCHANGE_INFO_PATH_URL = "/exchange_status"
 PING_PATH_URL = "/ping"
-SNAPSHOT_PATH_URL = "/depth"
+SNAPSHOT_PATH_URL = "/order_books"
 SERVER_TIME_PATH_URL = "/exchange_status"
 
 # Private API endpoints or CoincheckClient function
